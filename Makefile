@@ -1,32 +1,55 @@
-help:
-	@echo "make"
-	@echo "    clean"
-	@echo "        Remove Python/build artifacts."
-	@echo "    formatter"
-	@echo "        Apply black formatting to code."
-	@echo "    lint"
-	@echo "        Lint code with flake8, and check if black formatter should be applied."
-	@echo "    types"
-	@echo "        Check for type errors using pytype."
+#################################################################################
+# GLOBALS                                                                       #
+#################################################################################
 
+PYTHON_VERSION = python3.8
+VIRTUALENV := build/virtualenv
+
+#################################################################################
+# COMMANDS                                                                      #
+#################################################################################
+
+# Set the default location for the virtualenv to be stored
+# Create the virtualenv by installing the requirements and test requirements
+
+$(VIRTUALENV)/.installed: requirements.txt
+	@if [ -d $(VIRTUALENV) ]; then rm -rf $(VIRTUALENV); fi
+	@mkdir -p $(VIRTUALENV)
+	virtualenv --python $(PYTHON_VERSION) $(VIRTUALENV)
+	$(VIRTUALENV)/bin/pip3 install -r requirements.txt
+	touch $@
+
+# Update the requirements to latest. This is required because typically we won't
+# want to incldue test requirements in the requirements of the application, and
+# because it makes life much easier when we want to keep our dependencies up to
+# date.
+
+.PHONY: update-requirements-txt
+update-requirements-txt: VIRTUALENV := /tmp/update-requirements-virtualenv
+update-requirements-txt:
+	@if [ -d $(VIRTUALENV) ]; then rm -rf $(VIRTUALENV); fi
+	@mkdir -p $(VIRTUALENV)
+	virtualenv --python $(PYTHON_VERSION) $(VIRTUALENV)
+	$(VIRTUALENV)/bin/pip3 install -r unpinned_requirements.txt
+	echo "# Created by 'make update-requirements-txt'. DO NOT EDIT!" > requirements.txt
+	$(VIRTUALENV)/bin/pip freeze | grep -v pkg-resources==0.0.0 >> requirements.txt
+
+.PHONY: virtualenv
+virtualenv: $(VIRTUALENV)/.installed
+
+# Delete all compiled Python files
+.PHONY: clean
 clean:
-	find . -name '*.pyc' -exec rm -f {} +
-	find . -name '*.pyo' -exec rm -f {} +
-	find . -name '*~' -exec rm -f  {} +
-	rm -rf build/
-	rm -rf .pytype/
-	rm -rf dist/
-	rm -rf docs/_build
+	find . -type f -name "*.py[co]" -delete
+	find . -type d -name "__pycache__" -delete
 
-formatter:
-	black actions
-
+# Lint using flake8
+.PHONY: lint
 lint:
-	flake8 actions
-	black --check actions 
+	flake8 src
 
-types:
-	pytype --keep-going actions
-
+# Run tests with tox and if that fails, try again with pytest directly
+.PHONY: test
 test:
-	pytest tests
+	$(VIRTUALENV)/bin/tox
+
